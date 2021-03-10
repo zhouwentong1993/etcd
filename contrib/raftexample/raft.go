@@ -270,6 +270,7 @@ func (rc *raftNode) writeError(err error) {
 	rc.node.Stop()
 }
 
+// 启动 Raft 节点
 func (rc *raftNode) startRaft() {
 	if !fileutil.Exist(rc.snapdir) {
 		if err := os.Mkdir(rc.snapdir, 0750); err != nil {
@@ -416,6 +417,7 @@ func (rc *raftNode) serveChannels() {
 	go func() {
 		confChangeCount := uint64(0)
 
+		// 监听 propose channel
 		for rc.proposeC != nil && rc.confChangeC != nil {
 			select {
 			case prop, ok := <-rc.proposeC:
@@ -423,6 +425,7 @@ func (rc *raftNode) serveChannels() {
 					rc.proposeC = nil
 				} else {
 					// blocks until accepted by raft state machine
+					// 向 Raft 库提交数据
 					rc.node.Propose(context.TODO(), []byte(prop))
 				}
 

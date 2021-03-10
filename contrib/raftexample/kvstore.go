@@ -67,9 +67,11 @@ func (s *kvstore) Propose(k string, v string) {
 	if err := gob.NewEncoder(&buf).Encode(kv{k, v}); err != nil {
 		log.Fatal(err)
 	}
+	// 将数据写入 propose channel
 	s.proposeC <- buf.String()
 }
 
+// 从 commit channel 读取数据，写入到 kvstore 中
 func (s *kvstore) readCommits(commitC <-chan *commit, errorC <-chan error) {
 	for commit := range commitC {
 		if commit == nil {

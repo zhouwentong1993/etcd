@@ -29,6 +29,7 @@ type httpKVAPI struct {
 	confChangeC chan<- raftpb.ConfChange
 }
 
+// 封装具体的 HTTP 操作
 func (h *httpKVAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	key := r.RequestURI
 	defer r.Body.Close()
@@ -41,6 +42,7 @@ func (h *httpKVAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// 将数据放到 propose channel
 		h.store.Propose(key, string(v))
 
 		// Optimistic-- no waiting for ack from raft. Value is not yet
