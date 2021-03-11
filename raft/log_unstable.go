@@ -20,6 +20,7 @@ import pb "go.etcd.io/etcd/raft/v3/raftpb"
 // Note that unstable.offset may be less than the highest log
 // position in storage; this means that the next write to storage
 // might need to truncate the log before persisting unstable.entries.
+// 这个 unstable 日志具有什么意义？？
 type unstable struct {
 	// the incoming unstable snapshot, if any.
 	snapshot *pb.Snapshot

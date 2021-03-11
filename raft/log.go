@@ -21,6 +21,7 @@ import (
 	pb "go.etcd.io/etcd/raft/v3/raftpb"
 )
 
+// Raft 日志结构，分为 stable 和 unstable。
 type raftLog struct {
 	// storage contains all stable entries since the last snapshot.
 	storage Storage

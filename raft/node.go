@@ -53,29 +53,35 @@ type Ready struct {
 	// The current volatile state of a Node.
 	// SoftState will be nil if there is no update.
 	// It is not required to consume or store SoftState.
+	// 软状态，存在于内存中，容易发生变化的状态：current leader
 	*SoftState
 
 	// The current state of a Node to be saved to stable storage BEFORE
 	// Messages are sent.
 	// HardState will be equal to empty state if there is no update.
+	// 硬状态，持久化于磁盘中，不易发生变化的状态：voteFor，term
 	pb.HardState
 
 	// ReadStates can be used for node to serve linearizable read requests locally
 	// when its applied index is greater than the index in ReadState.
 	// Note that the readState will be returned when raft receives msgReadIndex.
 	// The returned is only valid for the request that requested to read.
+	// 用于读一致性的数据
 	ReadStates []ReadState
 
 	// Entries specifies entries to be saved to stable storage BEFORE
 	// Messages are sent.
+	// 发送消息之前要存储的数据
 	Entries []pb.Entry
 
 	// Snapshot specifies the snapshot to be saved to stable storage.
+	// snapshot 存储
 	Snapshot pb.Snapshot
 
 	// CommittedEntries specifies entries to be committed to a
 	// store/state-machine. These have previously been committed to stable
 	// store.
+	// committed 的数据
 	CommittedEntries []pb.Entry
 
 	// Messages specifies outbound messages to be sent AFTER Entries are
@@ -126,11 +132,14 @@ func (rd Ready) appliedCursor() uint64 {
 type Node interface {
 	// Tick increments the internal logical clock for the Node by a single tick. Election
 	// timeouts and heartbeat timeouts are in units of ticks.
+	// 充当逻辑时钟功能，其中 election timeouts 和 heartbeat 都是依赖此执行的。
 	Tick()
 	// Campaign causes the Node to transition to candidate state and start campaigning to become leader.
+	// ready to be a candidate
 	Campaign(ctx context.Context) error
 	// Propose proposes that data be appended to the log. Note that proposals can be lost without
 	// notice, therefore it is user's job to ensure proposal retries.
+	// 提议写入日志
 	Propose(ctx context.Context, data []byte) error
 	// ProposeConfChange proposes a configuration change. Like any proposal, the
 	// configuration change may be dropped with or without an error being
