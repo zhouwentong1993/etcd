@@ -261,6 +261,7 @@ func (ConfChangeType) EnumDescriptor() ([]byte, []int) {
 	return fileDescriptor_b042552c306ae59b, []int{3}
 }
 
+// 管理状态机实体
 type Entry struct {
 	Term                 uint64    `protobuf:"varint,2,opt,name=Term" json:"Term"`
 	Index                uint64    `protobuf:"varint,3,opt,name=Index" json:"Index"`
@@ -387,6 +388,7 @@ func (m *Snapshot) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_Snapshot proto.InternalMessageInfo
 
+// 发送消息实体
 type Message struct {
 	Type                 MessageType `protobuf:"varint,1,opt,name=type,enum=raftpb.MessageType" json:"type"`
 	To                   uint64      `protobuf:"varint,2,opt,name=to" json:"to"`

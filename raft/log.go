@@ -24,18 +24,23 @@ import (
 // Raft 日志结构，分为 stable 和 unstable。
 type raftLog struct {
 	// storage contains all stable entries since the last snapshot.
+	// 存储了所有从上一次 snapshot 以来的稳定的日志
 	storage Storage
 
 	// unstable contains all unstable entries and snapshot.
 	// they will be saved into storage.
+	// unstable 包含所有的非稳定的和快照日志，最终的去向是 storage
+	// 相当于日志的暂存点
 	unstable unstable
 
 	// committed is the highest log position that is known to be in
 	// stable storage on a quorum of nodes.
+	// committed 代表在 stable storage 里面最大的日志位置。
 	committed uint64
 	// applied is the highest log position that the application has
 	// been instructed to apply to its state machine.
 	// Invariant: applied <= committed
+	// 只是存储日志没有任何意义，Apply 才有意义。日志只有先 commit 然后才能被 Apply
 	applied uint64
 
 	logger Logger
