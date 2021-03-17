@@ -240,15 +240,20 @@ func (c *Config) validate() error {
 	return nil
 }
 
+// raft 核心数据结构？
 type raft struct {
+	// 唯一标识
 	id uint64
 
+	// 任期
 	Term uint64
+	// 给谁投票
 	Vote uint64
 
 	readStates []ReadState
 
 	// the log
+	// 日志
 	raftLog *raftLog
 
 	maxMsgSize         uint64
@@ -256,6 +261,7 @@ type raft struct {
 	// TODO(tbg): rename to trk.
 	prs tracker.ProgressTracker
 
+	// 当前状态，有四个状态
 	state StateType
 
 	// isLearner is true if the local raft node is a learner.
@@ -286,10 +292,14 @@ type raft struct {
 	// or candidate.
 	// number of ticks since it reached last electionTimeout or received a
 	// valid message from current leader when it is a follower.
+	// 超时相关
 	electionElapsed int
 
 	// number of ticks since it reached last heartbeatTimeout.
 	// only leader keeps heartbeatElapsed.
+	// 心跳相关
+	// TODO 这个变量的意义是什么？Leader 需要记录 Follower 的响应？
+	// 应当是记录自从上次发送 heartbeat 请求之后，过了多久。根据 timeout 判断是否需要重新发送
 	heartbeatElapsed int
 
 	checkQuorum bool
@@ -300,6 +310,7 @@ type raft struct {
 	// randomizedElectionTimeout is a random number between
 	// [electiontimeout, 2 * electiontimeout - 1]. It gets reset
 	// when raft changes its state to follower or candidate.
+	// 触发第二次选举时，随机的超时时间。FIXME 为什么变长而不是变短？
 	randomizedElectionTimeout int
 	disableProposalForwarding bool
 
@@ -309,6 +320,7 @@ type raft struct {
 	logger Logger
 }
 
+// 以指定的配置创建一个 Raft 节点
 func newRaft(c *Config) *raft {
 	if err := c.validate(); err != nil {
 		panic(err.Error())
@@ -351,6 +363,7 @@ func newRaft(c *Config) *raft {
 	if c.Applied > 0 {
 		raftlog.appliedTo(c.Applied)
 	}
+	// 初始化时为 Follower。
 	r.becomeFollower(r.Term, None)
 
 	var nodesStrs []string
@@ -496,6 +509,7 @@ func (r *raft) sendHeartbeat(to uint64, ctx []byte) {
 	commit := min(r.prs.Progress[to].Match, r.raftLog.committed)
 	m := pb.Message{
 		To:      to,
+		// 发送 MsgHeartbeat 消息。
 		Type:    pb.MsgHeartbeat,
 		Commit:  commit,
 		Context: ctx,
@@ -637,8 +651,10 @@ func (r *raft) appendEntry(es ...pb.Entry) (accepted bool) {
 
 // tickElection is run by followers and candidates after r.electionTimeout.
 func (r *raft) tickElection() {
+	// 代表又过去了一个时钟周期
 	r.electionElapsed++
 
+	// 代表又过去了一个超时周期，需要重新发起选举了。
 	if r.promotable() && r.pastElectionTimeout() {
 		r.electionElapsed = 0
 		r.Step(pb.Message{From: r.id, Type: pb.MsgHup})
@@ -650,6 +666,8 @@ func (r *raft) tickHeartbeat() {
 	r.heartbeatElapsed++
 	r.electionElapsed++
 
+	// 如果到达选举超时时间了，就代表自己的任期已经过了，需要发起
+	// fixme 问题：Leader 自己的 electionElapsed 不重置，Follower 的重置。那么 Leader 不就会先知道自己超时，然后率先发起选举吗？？
 	if r.electionElapsed >= r.electionTimeout {
 		r.electionElapsed = 0
 		if r.checkQuorum {
@@ -665,7 +683,9 @@ func (r *raft) tickHeartbeat() {
 		return
 	}
 
+	// 如果距离上次发送超过了超时时间，则重新发送一个。
 	if r.heartbeatElapsed >= r.heartbeatTimeout {
+		// 重置。
 		r.heartbeatElapsed = 0
 		r.Step(pb.Message{From: r.id, Type: pb.MsgBeat})
 	}
@@ -680,19 +700,23 @@ func (r *raft) becomeFollower(term uint64, lead uint64) {
 	r.logger.Infof("%x became follower at term %d", r.id, r.Term)
 }
 
+// 变成 candidate 的操作
 func (r *raft) becomeCandidate() {
 	// TODO(xiangli) remove the panic when the raft implementation is stable
 	if r.state == StateLeader {
 		panic("invalid transition [leader -> candidate]")
 	}
 	r.step = stepCandidate
+	// 将 term 加一
 	r.reset(r.Term + 1)
 	r.tick = r.tickElection
+	// 这是投票给自己的意思吗？投票给别人怎么记录，这又不是一个 list 结构
 	r.Vote = r.id
 	r.state = StateCandidate
 	r.logger.Infof("%x became candidate at term %d", r.id, r.Term)
 }
 
+// 注意，没有将 term+1
 func (r *raft) becomePreCandidate() {
 	// TODO(xiangli) remove the panic when the raft implementation is stable
 	if r.state == StateLeader {
@@ -745,6 +769,7 @@ func (r *raft) becomeLeader() {
 	r.logger.Infof("%x became leader at term %d", r.id, r.Term)
 }
 
+// 选举，原先在调用者做的校验现在放到了这里。
 func (r *raft) hup(t CampaignType) {
 	if r.state == StateLeader {
 		r.logger.Debugf("%x ignoring MsgHup because already leader", r.id)
@@ -770,6 +795,7 @@ func (r *raft) hup(t CampaignType) {
 
 // campaign transitions the raft instance to candidate state. This must only be
 // called after verifying that this is a legitimate transition.
+// 竞选流程：transitions the raft instance to candidate state。
 func (r *raft) campaign(t CampaignType) {
 	if !r.promotable() {
 		// This path should not be hit (callers are supposed to check), but
@@ -784,10 +810,13 @@ func (r *raft) campaign(t CampaignType) {
 		// PreVote RPCs are sent for the next term before we've incremented r.Term.
 		term = r.Term + 1
 	} else {
+		// 变为 candidate
 		r.becomeCandidate()
 		voteMsg = pb.MsgVote
 		term = r.Term
 	}
+
+	// 如果当前集群只有一个节点，那么它就变成 Leader
 	if _, _, res := r.poll(r.id, voteRespMsgType(voteMsg), true); res == quorum.VoteWon {
 		// We won the election after voting for ourselves (which must mean that
 		// this is a single-node cluster). Advance to the next state.
@@ -818,10 +847,12 @@ func (r *raft) campaign(t CampaignType) {
 		if t == campaignTransfer {
 			ctx = []byte(t)
 		}
+		// ② 具体投票逻辑，将自己的日志信息广播给所有其它的节点。
 		r.send(pb.Message{Term: term, To: id, Type: voteMsg, Index: r.raftLog.lastIndex(), LogTerm: r.raftLog.lastTerm(), Context: ctx})
 	}
 }
 
+// TODO 这些数据每个节点都是单独的吗？
 func (r *raft) poll(id uint64, t pb.MessageType, v bool) (granted int, rejected int, result quorum.VoteResult) {
 	if v {
 		r.logger.Infof("%x received %s from %x at term %d", r.id, t, id, r.Term)
@@ -837,11 +868,12 @@ func (r *raft) Step(m pb.Message) error {
 	switch {
 	case m.Term == 0:
 		// local message
-	case m.Term > r.Term:
-		if m.Type == pb.MsgVote || m.Type == pb.MsgPreVote {
+	case m.Term > r.Term: // 如果传过来的 term > 当前节点的 term
+		if m.Type == pb.MsgVote || m.Type == pb.MsgPreVote { // 如果是跟投票信息相关
 			force := bytes.Equal(m.Context, []byte(campaignTransfer))
 			inLease := r.checkQuorum && r.lead != None && r.electionElapsed < r.electionTimeout
 			if !force && inLease {
+				// 如果收到的是 Leader 的投票请求，忽略？
 				// If a server receives a RequestVote request within the minimum election timeout
 				// of hearing from a current leader, it does not update its term or grant its vote
 				r.logger.Infof("%x [logterm: %d, index: %d, vote: %x] ignored %s from %x [logterm: %d, index: %d] at term %d: lease is not expired (remaining ticks: %d)",
@@ -862,6 +894,7 @@ func (r *raft) Step(m pb.Message) error {
 			r.logger.Infof("%x [term: %d] received a %s message with higher term from %x [term: %d]",
 				r.id, r.Term, m.Type, m.From, m.Term)
 			if m.Type == pb.MsgApp || m.Type == pb.MsgHeartbeat || m.Type == pb.MsgSnap {
+				// 收到已经投票选举出的 Leader 发送的心跳，自己转变成 Follower
 				r.becomeFollower(m.Term, m.From)
 			} else {
 				r.becomeFollower(m.Term, None)
@@ -916,6 +949,7 @@ func (r *raft) Step(m pb.Message) error {
 		}
 
 	case pb.MsgVote, pb.MsgPreVote:
+		// 判断具体的投票逻辑
 		// We can vote if this is a repeat of a vote we've already cast...
 		canVote := r.Vote == m.From ||
 			// ...we haven't voted and we don't think there's a leader yet in this term...
@@ -953,6 +987,7 @@ func (r *raft) Step(m pb.Message) error {
 			// the message (it ignores all out of date messages).
 			// The term in the original message and current local term are the
 			// same in the case of regular votes, but different for pre-votes.
+			// 发送同意请求，等待 candidate 接收
 			r.send(pb.Message{To: m.From, Term: m.Term, Type: voteRespMsgType(m.Type)})
 			if m.Type == pb.MsgVote {
 				// Only record real votes.
@@ -980,9 +1015,10 @@ func stepLeader(r *raft, m pb.Message) error {
 	// These message types do not require any progress for m.From.
 	switch m.Type {
 	case pb.MsgBeat:
+		// 广播 heartbeat 请求
 		r.bcastHeartbeat()
 		return nil
-	case pb.MsgCheckQuorum:
+	case pb.MsgCheckQuorum: // TODO Leader 对超时的请求如何处理，没看明白
 		// The leader should always see itself as active. As a precaution, handle
 		// the case in which the leader isn't in the configuration any more (for
 		// example if it just removed itself).
@@ -1277,7 +1313,8 @@ func stepLeader(r *raft, m pb.Message) error {
 				}
 			}
 		}
-	case pb.MsgHeartbeatResp:
+	case pb.MsgHeartbeatResp: // 接收心跳响应 Response
+		// 将该节点的活跃标识置为 true
 		pr.RecentActive = true
 		pr.ProbeSent = false
 
@@ -1387,6 +1424,7 @@ func stepCandidate(r *raft, m pb.Message) error {
 		r.becomeFollower(m.Term, m.From) // always m.Term == r.Term
 		r.handleAppendEntries(m)
 	case pb.MsgHeartbeat:
+		// TODO 直接转变成 Follower，疑问：不应该先做校验吗？
 		r.becomeFollower(m.Term, m.From) // always m.Term == r.Term
 		r.handleHeartbeat(m)
 	case pb.MsgSnap:
@@ -1396,16 +1434,19 @@ func stepCandidate(r *raft, m pb.Message) error {
 		gr, rj, res := r.poll(m.From, m.Type, !m.Reject)
 		r.logger.Infof("%x has received %d %s votes and %d vote rejections", r.id, gr, m.Type, rj)
 		switch res {
+		// 赢得选举。
 		case quorum.VoteWon:
 			if r.state == StatePreCandidate {
 				r.campaign(campaignElection)
 			} else {
+				// 变成 Leader
 				r.becomeLeader()
 				r.bcastAppend()
 			}
 		case quorum.VoteLost:
 			// pb.MsgPreVoteResp contains future term of pre-candidate
 			// m.Term > r.Term; reuse r.Term
+			// 失败了变成 Follower
 			r.becomeFollower(r.Term, None)
 		}
 	case pb.MsgTimeoutNow:
@@ -1431,8 +1472,11 @@ func stepFollower(r *raft, m pb.Message) error {
 		r.lead = m.From
 		r.handleAppendEntries(m)
 	case pb.MsgHeartbeat:
+		// 收到心跳信息，重置超时时钟
 		r.electionElapsed = 0
+		// 宣示权威性，将 leader 记住
 		r.lead = m.From
+		// 响应！
 		r.handleHeartbeat(m)
 	case pb.MsgSnap:
 		r.electionElapsed = 0

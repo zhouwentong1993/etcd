@@ -222,14 +222,17 @@ type Peer struct {
 // It appends a ConfChangeAddNode entry for each given peer to the initial log.
 //
 // Peers must not be zero length; call RestartNode in that case.
+// ① 启动节点，入口函数，携带配置和节点
 func StartNode(c *Config, peers []Peer) Node {
 	if len(peers) == 0 {
 		panic("no peers given; use RestartNode instead")
 	}
+	// 创建 RawNode
 	rn, err := NewRawNode(c)
 	if err != nil {
 		panic(err)
 	}
+	// 初始化节点，主要是初始化日志相关。
 	rn.Bootstrap(peers)
 
 	n := newNode(rn)
@@ -258,6 +261,7 @@ type msgWithResult struct {
 }
 
 // node is the canonical implementation of the Node interface
+// Node 的具体实现，各种各样的 channel
 type node struct {
 	propc      chan msgWithResult
 	recvc      chan pb.Message
@@ -304,6 +308,7 @@ func (n *node) Stop() {
 	<-n.done
 }
 
+// 处理各种 channel 的业务逻辑
 func (n *node) run() {
 	var propc chan msgWithResult
 	var readyc chan Ready
@@ -357,9 +362,10 @@ func (n *node) run() {
 				pm.result <- err
 				close(pm.result)
 			}
-		case m := <-n.recvc:
+		case m := <-n.recvc: // 接收到信息
 			// filter out response message from unknown From.
 			if pr := r.prs.Progress[m.From]; pr != nil || !IsResponseMsg(m.Type) {
+				// 处理消息
 				r.Step(m)
 			}
 		case cc := <-n.confc:
@@ -393,7 +399,7 @@ func (n *node) run() {
 			case n.confstatec <- cs:
 			case <-n.done:
 			}
-		case <-n.tickc:
+		case <-n.tickc: // 收到 tick channel 发送的消息
 			n.rn.Tick()
 		case readyc <- rd:
 			n.rn.acceptReady(rd)

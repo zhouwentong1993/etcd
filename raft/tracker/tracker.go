@@ -119,6 +119,7 @@ type ProgressTracker struct {
 
 	Progress ProgressMap
 
+	// 保留投票记录
 	Votes map[uint64]bool
 
 	MaxInflight int

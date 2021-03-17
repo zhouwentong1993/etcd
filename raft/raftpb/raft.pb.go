@@ -70,6 +70,7 @@ func (EntryType) EnumDescriptor() ([]byte, []int) {
 type MessageType int32
 
 const (
+	// 尝试新选举
 	MsgHup            MessageType = 0
 	MsgBeat           MessageType = 1
 	MsgProp           MessageType = 2
