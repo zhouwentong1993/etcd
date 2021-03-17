@@ -26,6 +26,7 @@ type unstable struct {
 	snapshot *pb.Snapshot
 	// all entries that have not yet been written to storage.
 	entries []pb.Entry
+	//TODO offset 的意义？
 	offset  uint64
 
 	logger Logger
