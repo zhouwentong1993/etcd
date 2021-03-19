@@ -76,6 +76,7 @@ func newLogWithSize(storage Storage, logger Logger, maxNextEntsSize uint64) *raf
 	if err != nil {
 		panic(err) // TODO(bdarnell)
 	}
+	// TODO 为什么这样设计？unstable 和 storage 之间有什么关系？
 	log.unstable.offset = lastIndex + 1
 	log.unstable.logger = logger
 	// Initialize our committed and applied pointers to the time of the last compaction.
@@ -95,6 +96,7 @@ func (l *raftLog) String() string {
 func (l *raftLog) maybeAppend(index, logTerm, committed uint64, ents ...pb.Entry) (lastnewi uint64, ok bool) {
 	if l.matchTerm(index, logTerm) {
 		lastnewi = index + uint64(len(ents))
+		// 检查传入的 entries 里的 entry 中是否有不符合 index 和 term 关系的 entry
 		ci := l.findConflict(ents)
 		switch {
 		case ci == 0:
@@ -277,10 +279,12 @@ func (l *raftLog) term(i uint64) (uint64, error) {
 		return 0, nil
 	}
 
+	// 在 unstable 中获取指定 index 对应的 term
 	if t, ok := l.unstable.maybeTerm(i); ok {
 		return t, nil
 	}
 
+	// 在 Storage 中获取指定 index 对应的 term
 	t, err := l.storage.Term(i)
 	if err == nil {
 		return t, nil

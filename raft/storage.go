@@ -47,17 +47,21 @@ type Storage interface {
 	// TODO(tbg): split this into two interfaces, LogStorage and StateStorage.
 
 	// InitialState returns the saved HardState and ConfState information.
+	// 返回 HardState（就是需要持久化到磁盘的状态）
 	InitialState() (pb.HardState, pb.ConfState, error)
 	// Entries returns a slice of log entries in the range [lo,hi).
 	// MaxSize limits the total size of the log entries returned, but
 	// Entries returns at least one entry if any.
+	// 返回存在的 entries 元素，即具体的日志
 	Entries(lo, hi, maxSize uint64) ([]pb.Entry, error)
 	// Term returns the term of entry i, which must be in the range
 	// [FirstIndex()-1, LastIndex()]. The term of the entry before
 	// FirstIndex is retained for matching purposes even though the
 	// rest of that entry may not be available.
+	// 查询指定 index 对应的 term 值
 	Term(i uint64) (uint64, error)
 	// LastIndex returns the index of the last entry in the log.
+	// 返回当前 index 最后 entry TODO 不清楚
 	LastIndex() (uint64, error)
 	// FirstIndex returns the index of the first log entry that is
 	// possibly available via Entries (older entries have been incorporated
@@ -68,6 +72,7 @@ type Storage interface {
 	// If snapshot is temporarily unavailable, it should return ErrSnapshotTemporarilyUnavailable,
 	// so raft state machine could know that Storage needs some time to prepare
 	// snapshot and call Snapshot later.
+	// 返回最后一次生成的快照 TODO 不清楚
 	Snapshot() (pb.Snapshot, error)
 }
 
@@ -107,6 +112,7 @@ func (ms *MemoryStorage) SetHardState(st pb.HardState) error {
 }
 
 // Entries implements the Storage interface.
+// 直接获取底层数组元素即可。但是这就不能查 snapshot 的数据了吧
 func (ms *MemoryStorage) Entries(lo, hi, maxSize uint64) ([]pb.Entry, error) {
 	ms.Lock()
 	defer ms.Unlock()
@@ -171,6 +177,7 @@ func (ms *MemoryStorage) Snapshot() (pb.Snapshot, error) {
 
 // ApplySnapshot overwrites the contents of this Storage object with
 // those of the given snapshot.
+// 覆盖
 func (ms *MemoryStorage) ApplySnapshot(snap pb.Snapshot) error {
 	ms.Lock()
 	defer ms.Unlock()
@@ -183,6 +190,7 @@ func (ms *MemoryStorage) ApplySnapshot(snap pb.Snapshot) error {
 	}
 
 	ms.snapshot = snap
+	// 就直接替换了？？
 	ms.ents = []pb.Entry{{Term: snap.Metadata.Term, Index: snap.Metadata.Index}}
 	return nil
 }
@@ -191,6 +199,7 @@ func (ms *MemoryStorage) ApplySnapshot(snap pb.Snapshot) error {
 // can be used to reconstruct the state at that point.
 // If any configuration changes have been made since the last compaction,
 // the result of the last ApplyConfChange must be passed in.
+// 从 index 之前的所有数据全部存成快照，记录其 index 和 term 到 snapshot 的元数据中，并将 data 留存。
 func (ms *MemoryStorage) CreateSnapshot(i uint64, cs *pb.ConfState, data []byte) (pb.Snapshot, error) {
 	ms.Lock()
 	defer ms.Unlock()
@@ -203,6 +212,7 @@ func (ms *MemoryStorage) CreateSnapshot(i uint64, cs *pb.ConfState, data []byte)
 		getLogger().Panicf("snapshot %d is out of bound lastindex(%d)", i, ms.lastIndex())
 	}
 
+	// 完全覆盖数据，那么 snapshot 的元数据是什么意思？
 	ms.snapshot.Metadata.Index = i
 	ms.snapshot.Metadata.Term = ms.ents[i-offset].Term
 	if cs != nil {
@@ -215,6 +225,7 @@ func (ms *MemoryStorage) CreateSnapshot(i uint64, cs *pb.ConfState, data []byte)
 // Compact discards all log entries prior to compactIndex.
 // It is the application's responsibility to not attempt to compact an index
 // greater than raftLog.applied.
+// 将日志压缩。
 func (ms *MemoryStorage) Compact(compactIndex uint64) error {
 	ms.Lock()
 	defer ms.Unlock()
@@ -238,6 +249,7 @@ func (ms *MemoryStorage) Compact(compactIndex uint64) error {
 // Append the new entries to storage.
 // TODO (xiangli): ensure the entries are continuous and
 // entries[0].Index > ms.entries[0].Index
+// 将日志 entries append 到 MemoryStorage 的 entries 后面。
 func (ms *MemoryStorage) Append(entries []pb.Entry) error {
 	if len(entries) == 0 {
 		return nil
@@ -255,15 +267,19 @@ func (ms *MemoryStorage) Append(entries []pb.Entry) error {
 	}
 	// truncate compacted entries
 	if first > entries[0].Index {
+		// 丢弃掉前面多余的元素，与传入的数组对齐？
 		entries = entries[first-entries[0].Index:]
 	}
 
+	// 看看待插入的和原有的有没有缝隙。
 	offset := entries[0].Index - ms.ents[0].Index
 	switch {
 	case uint64(len(ms.ents)) > offset:
+		// 留下 firstIndex 到 offset 部分，然后把其它部分用传入的 entries 替代
 		ms.ents = append([]pb.Entry{}, ms.ents[:offset]...)
 		ms.ents = append(ms.ents, entries...)
 	case uint64(len(ms.ents)) == offset:
+		// 正好，直接插入就行了。
 		ms.ents = append(ms.ents, entries...)
 	default:
 		getLogger().Panicf("missing log entry [last: %d, append at: %d]",
